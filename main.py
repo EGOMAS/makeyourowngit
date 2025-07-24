@@ -3,69 +3,89 @@ import os
 import zlib
 import hashlib
 
+def init_git():
+    os.makedirs(".git/objects", exist_ok=True)
+    os.makedirs(".git/refs", exist_ok=True)
+    with open(".git/HEAD", "w") as f:
+        f.write("ref: refs/heads/main\n")
+    print("Initialized git directory")
+
+def hash_object(data: bytes, obj_type: str = "blob", write: bool = True) -> str:
+    header = f"{obj_type} {len(data)}".encode("utf-8") + b"\x00"
+    full_data = header + data
+    sha = hashlib.sha1(full_data).hexdigest()
+
+    if write:
+        dir_path = f".git/objects/{sha[:2]}"
+        file_path = f"{dir_path}/{sha[2:]}"
+        os.makedirs(dir_path, exist_ok=True)
+        if not os.path.exists(file_path):
+            with open(file_path, "wb") as f:
+                f.write(zlib.compress(full_data))
+    return sha
+
+def cat_file(sha: str):
+    file_path = f".git/objects/{sha[:2]}/{sha[2:]}"
+    if not os.path.exists(file_path):
+        raise RuntimeError(f"Object {sha} not found")
+
+    with open(file_path, "rb") as f:
+        compressed = f.read()
+        data = zlib.decompress(compressed)
+
+    header_end = data.find(b"\x00")
+    header = data[:header_end]
+    content = data[header_end + 1:]
+
+    if not header.startswith(b"blob"):
+        raise RuntimeError("Not a blob object!")
+
+    print(content.decode("utf-8"), end="")
+
+def write_tree():  
+    files = [filename for filename in os.listdir() if os.path.isfile(filename) and filename != ".git"]
+    entries = []
+    for filename in files:
+        with open(filename, "rb") as f:
+            content = f.read()
+            sha = hash_object(content, "blob")
+            entry = f"100644 {filename}".encode() + b"\x00" + bytes.fromhex(sha)
+            entries.append(entry)
+            
+    tree_data = b"".join(entries)
+    header = f"tree {len(tree_data)}\0".encode()
+    full_tree = header + tree_data
+    full_sha = hashlib.sha1(full_tree).hexdigest()
+    
+    dir_path = f".git/objects/{full_sha[:2]}"
+    file_path = f"{dir_path}/{full_sha[2:]}"
+    os.makedirs(dir_path, exist_ok=True)
+    if not os.path.exists(file_path):
+        with open(file_path, "wb") as f:
+            f.write(zlib.compress(full_tree))
+    
+    print(f"Added {filename} with blob SHA {sha}")
+
+    return full_sha   
+
 def main():
     command = sys.argv[1]
+
     if command == "init":
-        os.mkdir(".git")
-        os.mkdir(".git/objects")
-        os.mkdir(".git/refs")
-        with open(".git/HEAD", "w") as f:
-            f.write("ref: refs/heads/main\n")
-        print("Initialized git directory")
+        init_git()
+
     elif command == "cat-file" and sys.argv[2] == "-p":
+        sha = sys.argv[3]
+        cat_file(sha)
+
+    elif command == "hash-object" and sys.argv[2] == "-w":
         file = sys.argv[3]
-        filename = f".git/objects/{file[0:2]}/{file[2:]}"
-        if not os.path.exists(filename):
-            raise RuntimeError(f"Object {file} not found")
-        with open(filename, "rb") as f:
+        with open(file, "rb") as f:
             data = f.read()
-            data = zlib.decompress(data)
-
-            header_end = data.find(b"\x00")
-            header = data[:header_end]
-            content = data[header_end + 1:]
-
-            if not header.startswith(b"blob "):
-                raise RuntimeError("Not a blob object!")
-
-            print(content.decode("utf-8"), end="")
-    # this time the command is hash-object
-    elif command == "hash-object" and len(sys.argv) < 4 and sys.argv[2] == "-w":
-        if sys.argv[2] != "-w":
-            raise RuntimeError(f"Unexpected flag #{sys.argv[2]}")
-        # the file is again the 3rd index of our git command
-        file = sys.argv[3]
-        # opening our file and setting it to read binary mode and defining it as f
-        with open(file, "rb") as f: 
-            # now we're reading {f} and defining our blob header and how it's structured, with the blob, then it's size, and a null byte
-            content = f.read()
-            header = f"blob {len(content)}\0".encode("utf-8")
-            
-            # blob is your data
-            blob = content + header
-            
-            sha = hashlib.sha1(blob).hexdigest()
-            # compresing our data 
-            zlib.compress(blob)
-            
-            # storing our data at .git/object/3c for example
-            storedLocation = f".git/object/{sha[:2]}"
-            # next to lines tell the files name instead of our folders name. So if our full file name is 3c09187hi13uhwjg71397fhss,
-            # it'll take everything after the 2nd character and put it into our file_name variable. 
-            # and finally our full_path takes both and combines them into a single path 3c/091279... you get the idea
-            file_name = f"{sha[2:]}"
-            full_path = os.path.join(file_name, full_path)
-            
-            #if the path doesn't exist, it'll make new one then basically do everything exactly the same except it'll write binary instead of read, and add compressed to our file.
-            if not os.path.exists(full_path):
-                compressed = zlib.compress(blob)
-                os.makedirs(file_name, full_path)
-                with open(full_path, "wb") as f:
-                    f.write(compressed)           
-            print(sha)
-
-
+        sha = hash_object(data, "blob", write=True)
+        print(sha)
     else:
-        raise RuntimeError(f"Unknown command #{command}")
+        raise RuntimeError(f"Unknown command: {command}")
+
 if __name__ == "__main__":
     main()
