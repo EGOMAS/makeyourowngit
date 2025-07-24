@@ -1,1 +1,2 @@
-Hi this is a little project I'm working on for making my own version of git, like a "mini git" of sorts.
+# Make Your Own Git
+A basic implementation of Git written in Python, built from scratch to understand how Git works under the hood.
