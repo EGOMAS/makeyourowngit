@@ -76,18 +76,60 @@ def write_tree():
 
     return full_sha   
 
+# This function gets the users info and returns it in the Git format.
+def get_user_info(role: str) -> str:
+    name, email = input(f"{role} (format: Name Email) ").split()
+    t = int(time.time())
+    timezone = "+0000"
+    return f"{role.lower()} {name} <{email}> {t} {timezone}"
+
+# This builds the whole commit lines and content using all the information like the SHA code, author and commiter's lines.
+def build_commit_content(tree_sha, parent_sha, author_line, committer_line, message):
+    lines = [f"tree {tree_sha}"]
+    if parent_sha:
+        lines.append(f"parent {parent_sha}")
+    lines += [author_line, committer_line, "", message]
+    return("\n".join(lines) +"\n")
+
+# This combines the previous two functions to write out the commit and hash it, compress it, and store it in the .git/HEAD folder.
 def commit_tree(message: str, parent=None):
     tree_sha = write_tree()
-    lines = []
-    timestamp = int(time.time())
-    timezone = "+0000"
-    name = input("Please Input your name for the commmit.\n")
-    email = input("Please input your email for the commit.\n")
-    lines.append(timestamp, timezone, name, email, tree_sha)
-    commit_sha =f"tree <{tree_sha}>\n author <{name}> <{email}> <{timestamp}> <{timezone}>\n committer <{name}> <{email}> <{timestamp}> <{timezone}>\n <commit {message}>"
+    parent_sha = parent or get_head_commit()
+    
+    author_line = get_user_info("Author")
+    committer_line = get_user_info("Committer")
+    
+    content = build_commit_content(tree_sha, parent_sha, author_line, committer_line, message)
+    commit_bytes = content.encode()
+    header = f"commit {len(commit_bytes)}\x00".encode()
+    store = header + commit_bytes
+    
+    sha = hashlib.sha1(store).hexdigest()
+    write_object(sha, store)
+    
+    with open(".git/HEAD", "w") as f:
+        f.write(sha)
 
-    return commit_sha
+def write_object(sha, data):
+    dir_path = f".git/objects/{sha[:2]}"
+    file_path = f"{dir_path}/{sha[2:]}"
+    os.makedirs(dir_path, exist_ok=True)
+    with open(file_path, "wb") as f:
+        f.write(zlib.compress(data))
 
+def get_head_commit():
+    try:
+        with open(".git/HEAD", "r") as f:
+            ref = f.read().strip()
+        if ref.startswith("ref: "):
+            ref_path = ref[5:]
+            full_path = os.path.join(".git", ref_path)
+            if os.path.exists(full_path):
+                with open(full_path, "r") as rf:
+                    return rf.read().strip()
+    except FileNotFoundError:
+        pass
+    return None
 # Main function to handle command line arguments and execute git-like commands
 def main():
     command = sys.argv[1]
@@ -109,8 +151,10 @@ def main():
         sha = write_tree()
         print(sha)
     
-    elif command == "commit_tree"(sha, input("message"),):
-        print(commit_tree)
+    elif command == "commit-tree":
+        message = input("Commit message: ")
+        commit_tree(message)
+  
     
     else:
         raise RuntimeError(f"Unknown command: {command}")
