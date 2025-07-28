@@ -2,6 +2,8 @@ import sys
 import os
 import zlib
 import hashlib
+import time 
+
 
 def init_git():
     # Initialize a new git repository structure
@@ -74,6 +76,18 @@ def write_tree():
 
     return full_sha   
 
+def commit_tree(message: str, parent=None):
+    tree_sha = write_tree()
+    lines = []
+    timestamp = int(time.time())
+    timezone = "+0000"
+    name = input("Please Input your name for the commmit.\n")
+    email = input("Please input your email for the commit.\n")
+    lines.append(timestamp, timezone, name, email, tree_sha)
+    commit_sha =f"tree <{tree_sha}>\n author <{name}> <{email}> <{timestamp}> <{timezone}>\n committer <{name}> <{email}> <{timestamp}> <{timezone}>\n <commit {message}>"
+
+    return commit_sha
+
 # Main function to handle command line arguments and execute git-like commands
 def main():
     command = sys.argv[1]
@@ -94,8 +108,13 @@ def main():
     elif command == "write-tree":
         sha = write_tree()
         print(sha)
+    
+    elif command == "commit_tree"(sha, input("message"),):
+        print(commit_tree)
+    
     else:
         raise RuntimeError(f"Unknown command: {command}")
+
 
 if __name__ == "__main__":
     main()
