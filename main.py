@@ -106,7 +106,7 @@ def commit_tree(message: str, parent=None):
     
     sha = hashlib.sha1(store).hexdigest()
     write_object(sha, store)
-    
+    print(f"Commit created with SHA: {sha   }")
     with open(".git/HEAD", "w") as f:
         f.write(sha)
 
@@ -147,6 +147,7 @@ def main():
             data = f.read()
         sha = hash_object(data, "blob", write=True)
         print(sha)
+    
     elif command == "write-tree":
         sha = write_tree()
         print(sha)
