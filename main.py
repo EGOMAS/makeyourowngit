@@ -76,21 +76,6 @@ def write_tree():
 
     return full_sha   
 
-# This function gets the users info and returns it in the Git format.
-def get_user_info(role: str) -> str:
-    name, email = input(f"{role} (format: Name Email) ").split()
-    t = int(time.time())
-    timezone = "+0000"
-    return f"{role.lower()} {name} <{email}> {t} {timezone}"
-
-# This builds the whole commit lines and content using all the information like the SHA code, author and commiter's lines.
-def build_commit_content(tree_sha, parent_sha, author_line, committer_line, message):
-    lines = [f"tree {tree_sha}"]
-    if parent_sha:
-        lines.append(f"parent {parent_sha}")
-    lines += [author_line, committer_line, "", message]
-    return("\n".join(lines) +"\n")
-
 # This combines the previous two functions to write out the commit and hash it, compress it, and store it in the .git/HEAD folder.
 def commit_tree(message: str, parent=None):
     tree_sha = write_tree()
@@ -106,7 +91,8 @@ def commit_tree(message: str, parent=None):
     
     sha = hashlib.sha1(store).hexdigest()
     write_object(sha, store)
-    print(f"Commit created with SHA: {sha   }")
+    update_ref("refs/heads/main", sha)
+    print(f"Commit created with SHA: {sha}")
     with open(".git/HEAD", "w") as f:
         f.write(sha)
 
@@ -116,6 +102,12 @@ def write_object(sha, data):
     os.makedirs(dir_path, exist_ok=True)
     with open(file_path, "wb") as f:
         f.write(zlib.compress(data))
+
+def update_ref(ref, sha):
+    path = os.path.join(".git/", ref)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(sha + "\n")
 
 def get_head_commit():
     try:
@@ -130,6 +122,96 @@ def get_head_commit():
     except FileNotFoundError:
         pass
     return None
+
+# This function gets the users info and returns it in the Git format.
+def get_user_info(role: str) -> str:
+    name, email = input(f"{role} (format: Name Email) ").split()
+    t = int(time.time())
+    timezone = "+0000"
+    return f"{role.lower()} {name} <{email}> {t} {timezone}"
+    
+# This builds the whole commit lines and content using all the information like the SHA code, author and commiter's lines.
+def build_commit_content(tree_sha, parent_sha, author_line, committer_line, message):
+    lines = [f"tree {tree_sha}"]
+    if parent_sha:
+        lines.append(f"parent {parent_sha}")
+    lines += [author_line, committer_line, "", message]
+    return("\n".join(lines) +"\n")
+
+def log_commits():
+    latest_sha = get_head_commit()
+    info = []
+    commit_message = []
+    
+    while latest_sha:
+        path = f".git/objects/{latest_sha[:2]}/{latest_sha[2:]}"
+        with open(path, "rb") as f:
+            compressed = f.read()
+            content = zlib.decompress(compressed).split(b'\x00', 1)[1]
+            lines = content.decode().splitlines()
+            
+            parent_sha = []
+            message_lines = []
+            in_message = False
+
+            print(f"Commit: {latest_sha}")
+
+            for line in lines:
+                if line.startswith("parent "):
+                    parent_sha = line.split()[1]
+                elif in_message:
+                    message_lines.append(line)
+                elif line.strip() == "":
+                    in_message = True
+            
+            print("Message")
+            print("\n".join(message_lines))
+            print("-"*40)
+
+            latest_sha = parent_sha
+def checkout(commit):
+    filepath = f".git/objects/{commit[:2]}/{commit[2:]}"
+    tree_sha = None
+    with open(filepath, "rb") as f:
+        compressed = f.read()
+        content = zlib.decompress(compressed).split(b'\x00', 1)[1]
+        lines = content.splitlines()
+        for line in lines:
+            if line.startswith(b"tree "):
+                tree_sha = line.split()[1].decode() 
+                break
+    treepath = f".git/objects/{tree_sha[:2]}/{tree_sha[2:]}"
+    with open(treepath, "rb") as f:
+        compress = f.read()
+        decompress = zlib.decompress(compress).split(b'\x00', 1)[1]
+        i = 0
+        entries = []
+        while i < len(decompress):
+            end = decompress.find(b'\x00', i)
+            header = decompress[i:end]
+            mode, filename = header.split(b' ', 1)
+            filename = filename.decode()
+            
+            sha_start = end + 1
+            sha_end = sha_start + 20
+            sha = decompress[sha_start:sha_end].hex()
+
+            entries.append((filename, sha))
+
+            i = sha_end
+    
+    for filename, sha in entries:
+        obj_path = f".git/objects/{sha[:2]}/{sha[2:]}"
+        with open(obj_path, "rb") as f:
+            blob_compressed = f.read()
+            blob_data = zlib.decompress(blob_compressed)
+            content = blob_data.split(b'\x00', 1)[1]  # Remove 'blob <size>\x00'
+
+        with open(filename, "wb") as out:
+            out.write(content)
+
+    print(f"Checked out commit {commit}.")
+
 # Main function to handle command line arguments and execute git-like commands
 def main():
     command = sys.argv[1]
@@ -159,7 +241,6 @@ def main():
     
     else:
         raise RuntimeError(f"Unknown command: {command}")
-
 
 if __name__ == "__main__":
     main()
